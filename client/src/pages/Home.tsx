@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
 import ChatMessage from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
@@ -8,73 +9,7 @@ import EventCard, { type EventCardProps } from "@/components/EventCard";
 import DeadlineCard, { type DeadlineCardProps } from "@/components/DeadlineCard";
 import TutoringSession, { type TutoringSessionProps } from "@/components/TutoringSession";
 import { ScrollArea } from "@/components/ui/scroll-area";
-
-// TODO: Remove mock data - this is sample data for the prototype
-const mockEvents: EventCardProps[] = [
-  {
-    id: "1",
-    title: "AI Workshop: Building Campus Apps",
-    date: "Oct 30, 2025",
-    time: "2:00 PM - 4:00 PM",
-    location: "Engineering Building, Room 205",
-    category: "Academic",
-    description: "Learn how to build AI-powered applications for campus use."
-  },
-  {
-    id: "2",
-    title: "Career Fair 2025",
-    date: "Nov 5, 2025",
-    time: "10:00 AM - 4:00 PM",
-    location: "Student Center, Main Hall",
-    category: "Career",
-    description: "Meet with top employers and explore internship opportunities."
-  },
-  {
-    id: "3",
-    title: "Fall Concert Series",
-    date: "Nov 8, 2025",
-    time: "7:00 PM - 9:00 PM",
-    location: "Performing Arts Center",
-    category: "Arts",
-  }
-];
-
-const mockDeadlines: DeadlineCardProps[] = [
-  {
-    id: "1",
-    title: "Project Proposal Submission",
-    dueDate: "Oct 28, 2025 11:59 PM",
-    course: "CS 401: Senior Capstone",
-    urgency: "today",
-    description: "Submit your final project proposal."
-  },
-  {
-    id: "2",
-    title: "Midterm Exam",
-    dueDate: "Nov 2, 2025 2:00 PM",
-    course: "MATH 301: Linear Algebra",
-    urgency: "thisWeek",
-  }
-];
-
-const mockTutoring: TutoringSessionProps[] = [
-  {
-    id: "1",
-    tutor: "Dr. Sarah Johnson",
-    subject: "Calculus I & II",
-    time: "Today, 2:00 PM - 4:00 PM",
-    location: "Building A, Room 305",
-    availability: "Available"
-  },
-  {
-    id: "2",
-    tutor: "Prof. Michael Chen",
-    subject: "Computer Science",
-    time: "Tomorrow, 3:00 PM - 5:00 PM",
-    location: "CS Lab, Room 120",
-    availability: "Limited"
-  }
-];
+import { useToast } from "@/hooks/use-toast";
 
 const suggestedQueries = [
   "Today's events",
@@ -82,6 +17,13 @@ const suggestedQueries = [
   "Upcoming deadlines",
   "Career fair schedule"
 ];
+
+interface ServerMessage {
+  id: string;
+  message: string;
+  isAI: string;
+  timestamp: Date;
+}
 
 interface Message {
   id: string;
@@ -91,16 +33,50 @@ interface Message {
 }
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      text: "Hello! I'm your campus AI assistant powered by NVIDIA Nemotron. I can help you find tutoring sessions, events, deadlines, and class information. What would you like to know?",
-      isAI: true,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
-  ]);
+  const { toast } = useToast();
+  const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const { data: chatHistory } = useQuery<ServerMessage[]>({
+    queryKey: ['/api/chat/history'],
+  });
+
+  useEffect(() => {
+    if (chatHistory && !historyLoaded) {
+      if (chatHistory.length === 0) {
+        setMessages([
+          {
+            id: "welcome",
+            text: "Hello! I'm your campus AI assistant powered by NVIDIA Nemotron. I can help you find tutoring sessions, events, deadlines, and class information. What would you like to know?",
+            isAI: true,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+      } else {
+        setMessages(chatHistory.map(msg => ({
+          id: msg.id,
+          text: msg.message,
+          isAI: msg.isAI === "true",
+          timestamp: new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        })));
+      }
+      setHistoryLoaded(true);
+    }
+  }, [chatHistory, historyLoaded]);
+
+  const { data: events = [] } = useQuery<EventCardProps[]>({
+    queryKey: ['/api/events'],
+  });
+
+  const { data: deadlines = [] } = useQuery<DeadlineCardProps[]>({
+    queryKey: ['/api/deadlines'],
+  });
+
+  const { data: tutoringSessions = [] } = useQuery<TutoringSessionProps[]>({
+    queryKey: ['/api/tutoring'],
+  });
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -108,52 +84,91 @@ export default function Home() {
     }
   }, [messages, isTyping]);
 
-  // TODO: Remove mock functionality - replace with actual NVIDIA Nemotron API call
-  const simulateAIResponse = (query: string) => {
+  const sendChatMessage = async (message: string) => {
     setIsTyping(true);
     
-    setTimeout(() => {
-      let response = "";
-      const lowerQuery = query.toLowerCase();
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message }),
+      });
 
-      if (lowerQuery.includes("event") || lowerQuery.includes("today")) {
-        response = `Here are today's upcoming events:\n\n${mockEvents.map(e => 
-          `• ${e.title}\n  ${e.time} at ${e.location}`
-        ).join('\n\n')}\n\nWould you like more details about any of these events?`;
-      } else if (lowerQuery.includes("tutor")) {
-        response = `Here are the available tutoring sessions:\n\n${mockTutoring.map(t => 
-          `• ${t.subject} with ${t.tutor}\n  ${t.time} at ${t.location}\n  Status: ${t.availability}`
-        ).join('\n\n')}\n\nWould you like to book a session?`;
-      } else if (lowerQuery.includes("deadline")) {
-        response = `Here are your upcoming deadlines:\n\n${mockDeadlines.map(d => 
-          `• ${d.title}\n  ${d.course}\n  Due: ${d.dueDate}`
-        ).join('\n\n')}\n\nNeed help managing your deadlines?`;
-      } else if (lowerQuery.includes("career")) {
-        response = "The Career Fair 2025 is scheduled for November 5th from 10:00 AM to 4:00 PM at the Student Center Main Hall. Over 50 employers will be attending, including tech companies, consulting firms, and research institutions. Would you like tips on how to prepare?";
-      } else {
-        response = "I can help you with information about campus events, tutoring sessions, academic deadlines, and class schedules. Try asking about today's events, available tutoring, or upcoming deadlines!";
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Failed to get AI response');
       }
 
+      const data = await response.json();
+      
       setIsTyping(false);
       setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: response,
+        id: data.aiMessage.id,
+        text: data.aiMessage.message,
         isAI: true,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date(data.aiMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }]);
-    }, 1500);
+    } catch (error: any) {
+      setIsTyping(false);
+      console.error('Chat error:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to get a response. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = async (text: string) => {
+    const tempId = `temp-${Date.now()}`;
     const newMessage: Message = {
-      id: Date.now().toString(),
+      id: tempId,
       text,
       isAI: false,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
     
     setMessages(prev => [...prev, newMessage]);
-    simulateAIResponse(text);
+    
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: text }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Failed to get AI response');
+      }
+
+      const data = await response.json();
+      
+      setMessages(prev => prev.map(msg => 
+        msg.id === tempId 
+          ? {
+              id: data.userMessage.id,
+              text: data.userMessage.message,
+              isAI: false,
+              timestamp: new Date(data.userMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }
+          : msg
+      ));
+      
+      sendChatMessage(text);
+    } catch (error: any) {
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      console.error('Chat error:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send message. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSuggestedQuery = (query: string) => {
@@ -191,34 +206,39 @@ export default function Home() {
                     ))}
                   </div>
 
-                  {/* TODO: Remove sample content display */}
                   <div className="mt-12 space-y-8">
-                    <div>
-                      <h2 className="text-2xl font-semibold mb-4">Upcoming Events</h2>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        {mockEvents.slice(0, 2).map((event) => (
-                          <EventCard key={event.id} {...event} />
-                        ))}
+                    {events.length > 0 && (
+                      <div>
+                        <h2 className="text-2xl font-semibold mb-4">Upcoming Events</h2>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {events.slice(0, 2).map((event) => (
+                            <EventCard key={event.id} {...event} />
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div>
-                      <h2 className="text-2xl font-semibold mb-4">Your Deadlines</h2>
-                      <div className="space-y-3">
-                        {mockDeadlines.map((deadline) => (
-                          <DeadlineCard key={deadline.id} {...deadline} />
-                        ))}
+                    {deadlines.length > 0 && (
+                      <div>
+                        <h2 className="text-2xl font-semibold mb-4">Your Deadlines</h2>
+                        <div className="space-y-3">
+                          {deadlines.map((deadline) => (
+                            <DeadlineCard key={deadline.id} {...deadline} />
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div>
-                      <h2 className="text-2xl font-semibold mb-4">Available Tutoring</h2>
-                      <div className="space-y-3">
-                        {mockTutoring.map((session) => (
-                          <TutoringSession key={session.id} {...session} />
-                        ))}
+                    {tutoringSessions.length > 0 && (
+                      <div>
+                        <h2 className="text-2xl font-semibold mb-4">Available Tutoring</h2>
+                        <div className="space-y-3">
+                          {tutoringSessions.map((session) => (
+                            <TutoringSession key={session.id} {...session} />
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               )}

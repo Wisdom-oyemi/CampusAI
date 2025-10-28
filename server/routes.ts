@@ -37,6 +37,11 @@ async function callNvidiaAPI(messages: NvidiaMessage[]): Promise<string> {
   }
 
   const data = await response.json();
+  
+  if (!data.choices || data.choices.length === 0 || !data.choices[0].message) {
+    throw new Error("NVIDIA API returned an invalid response");
+  }
+  
   return data.choices[0].message.content;
 }
 
@@ -69,16 +74,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isAI: "false",
       });
 
-      const [events, deadlines, tutoringSessions] = await Promise.all([
+      const [events, deadlines, tutoringSessions, chatHistory] = await Promise.all([
         storage.getEvents(),
         storage.getDeadlines(),
         storage.getTutoringSessions(),
+        storage.getChatMessages(),
       ]);
 
       const systemPrompt = buildCampusContext(events, deadlines, tutoringSessions);
 
+      const recentHistory = chatHistory
+        .slice(-10)
+        .filter(msg => msg.id !== userMessage.id)
+        .map(msg => ({
+          role: msg.isAI === "true" ? "assistant" as const : "user" as const,
+          content: msg.message,
+        }));
+
       const aiResponse = await callNvidiaAPI([
         { role: "system", content: systemPrompt },
+        ...recentHistory,
         { role: "user", content: message },
       ]);
 
@@ -121,6 +136,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const sessions = await storage.getTutoringSessions();
       res.json(sessions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/chat/history", async (_req, res) => {
+    try {
+      const messages = await storage.getChatMessages();
+      res.json(messages);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
