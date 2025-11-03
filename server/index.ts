@@ -1,8 +1,17 @@
+// Load .env before other imports so environment variables are available to all modules.
+// Use the side-effect import form so dotenv runs during module initialization.
+import 'dotenv/config';
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+
+// Helpful developer warning when the NVIDIA_API_KEY is not configured
+if (!process.env.NVIDIA_API_KEY) {
+  console.warn("Warning: NVIDIA_API_KEY is not set. Add it to a .env file or set the environment variable before starting the server.");
+}
 
 declare module 'http' {
   interface IncomingMessage {
@@ -71,11 +80,18 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
+  // reusePort is not supported on all platforms (Windows throws ENOTSUP).
+  // Only set reusePort when the platform is not Windows.
+  const listenOptions: Record<string, any> = {
     port,
     host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
+  };
+
+  if (process.platform !== 'win32') {
+    listenOptions.reusePort = true;
+  }
+
+  server.listen(listenOptions, () => {
     log(`serving on port ${port}`);
   });
 })();
