@@ -1,0 +1,1 @@
+We are planning to build Campus AI, an AI agent that helps students find timely resources such as tutoring, campus events, and deadlines for clubs and assignments. Using NVIDIA Nemotron, this AI agent will be able to answer campus questions, and use APIS to sync events.
