@@ -21,6 +21,8 @@ _Coming soon_
 **Installation**
 git clone https://github.com/Wisdom-oyemi/CampusAI
 cd CampusAI
+npm install
+npm run dev
 
 **Project Status**
 CampusAI is an early-stage prototype developed during a hackathon. Core functionality and integrations are still under development.
